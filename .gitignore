@@ -4,3 +4,5 @@
 /log
 /txt_pc
 /kitti_pc
+/lidar_static
+/lidar_moving

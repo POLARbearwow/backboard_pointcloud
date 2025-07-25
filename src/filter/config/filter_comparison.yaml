@@ -1,0 +1,37 @@
+pointcloud_filter_node:
+  ros__parameters:
+    # Bounding box filter parameters
+    x_min: 0.0
+    x_max: 12.0
+    y_min: -5.0
+    y_max: 5.0
+    z_min: 2.5
+    z_max: 4.0 
+    
+    # Board detection parameters
+    board_width: 1.8 
+    len_tol: 0.6
+    min_inlier_ratio: 0.1 
+    max_candidates: 3 
+    history_size: 5
+    ransac_dist_thresh: 0.02 
+    
+    # Filter type selection
+    filter_type: 'passthrough'
+    
+    # Advanced filter selection (选择用于2D投影的滤波器)
+    advanced_filter_type: 'statistical'  # none, statistical, bilateral, gaussian
+    
+    # Mode selection: comparison mode启用所有滤波器
+    comparison_mode: true
+    
+    # Statistical Outlier Removal filter parameters
+    sor_mean_k: 50              # Number of nearest neighbors for analysis
+    sor_stddev_mul: 1.0         # Standard deviation multiplier threshold
+    
+    # Bilateral filter parameters  
+    bilateral_sigma_s: 0.05     # Spatial sigma (half size)
+    bilateral_sigma_r: 0.05     # Range sigma (standard deviation)
+    
+    # Gaussian (MLS) filter parameters
+    gaussian_radius: 0.03       # Search radius for MLS smoothing

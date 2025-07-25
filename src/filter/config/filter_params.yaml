@@ -1,9 +1,46 @@
 pointcloud_filter_node:
   ros__parameters:
+    # Bounding box filter parameters
     x_min: 0.0
-    x_max: 7.0
-    y_min: -3.0
-    y_max: 3.0
-    z_min: 0.0
+    x_max: 12.0
+    y_min: -20.0
+    y_max: 20.0
+    z_min: 2.5
     z_max: 4.0 
+    
+    # Board detection parameters
     board_width: 1.8 
+    len_tol: 0.2
+    min_inlier_ratio: 0.01
+    max_candidates: 10 
+    history_size: 3
+    ransac_dist_thresh: 0.02 
+    
+    # Filter type selection (legacy parameter, use enable_* instead)
+    filter_type: 'passthrough'
+    
+    # Advanced filter selection (只能选择一种: none, statistical, bilateral, gaussian)
+    advanced_filter_type: 'statistical'  # 指定启用哪种高级滤波器
+    
+    # Mode selection: false=single mode (ros2 run), true=comparison mode (shell script)
+    comparison_mode: false
+    
+    
+    # Statistical Outlier Removal filter parameters
+    sor_mean_k: 8              # Number of nearest neighbors for analysis
+    sor_stddev_mul: 0.5         # Standard deviation multiplier threshold
+    
+    # Bilateral filter parameters  
+    bilateral_sigma_s: 0.05     # Spatial sigma (half size)
+    bilateral_sigma_r: 0.05     # Range sigma (standard deviation)
+    
+    # Gaussian (MLS) filter parameters
+    gaussian_radius: 0.03       # Search radius for MLS smoothing
+    
+    # Clustering parameters for backboard detection
+    cluster_tolerance: 2.0     # Maximum distance between points in the same cluster (meters)
+    min_cluster_size: 20        # Minimum number of points in a valid cluster
+    max_cluster_size: 2000       # Maximum number of points in a valid cluster (to filter out large walls)
+    max_clusters: 10            # Maximum number of clusters to extract
+    max_cluster_dimension: 3.0  # Maximum dimension (length/width) of a valid cluster (meters)
+    min_cluster_dimension: 1.0  # Minimum dimension (length/width) of a valid cluster (meters) 
