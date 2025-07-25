@@ -25,7 +25,6 @@
 
 
 #include <visualization_msgs/msg/marker.hpp>
-#include <visualization_msgs/msg/marker_array.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <Eigen/Dense>
 #include <sstream>
@@ -104,10 +103,6 @@ public:
     // Publisher for computed center point
     center_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
       "board_bottom_center", 10);
-
-    // Publisher for cluster markers
-    cluster_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
-      "cluster_markers", 10);
 
     // Timer to periodically refresh parameters at runtime
     timer_ = this->create_wall_timer(std::chrono::seconds(1), std::bind(&PointCloudFilterNode::get_filter_params, this));
@@ -393,48 +388,11 @@ private:
                 valid_clusters_count, cluster_indices.size());
 
     // Publish all clusters for visualization
-    if (!cluster_indices.empty()) {
-      visualization_msgs::msg::MarkerArray marker_array;
-      int id_counter = 0;
-      for (size_t i = 0; i < std::min(cluster_indices.size(), static_cast<size_t>(max_clusters_)); ++i) {
-        // bounding box already computed earlier, recompute quickly
-        if (cluster_indices[i].indices.empty()) continue;
-        float min_x = std::numeric_limits<float>::max(), max_x = -std::numeric_limits<float>::max();
-        float min_y = std::numeric_limits<float>::max(), max_y = -std::numeric_limits<float>::max();
-        for (int idx : cluster_indices[i].indices) {
-          const auto &pt = input_cloud->points[idx];
-          min_x = std::min(min_x, pt.x);
-          max_x = std::max(max_x, pt.x);
-          min_y = std::min(min_y, pt.y);
-          max_y = std::max(max_y, pt.y);
-        }
-        float cx = 0.5f * (min_x + max_x);
-        float cy = 0.5f * (min_y + max_y);
-        float width = max_x - min_x;
-        float height = max_y - min_y;
-
-        visualization_msgs::msg::Marker box;
-        box.header = header;
-        box.ns = "clusters";
-        box.id = id_counter++;
-        box.type = visualization_msgs::msg::Marker::CUBE;
-        box.action = visualization_msgs::msg::Marker::ADD;
-        box.pose.position.x = cx;
-        box.pose.position.y = cy;
-        box.pose.position.z = 0.0;
-        box.pose.orientation.w = 1.0;
-        box.scale.x = width;
-        box.scale.y = height;
-        box.scale.z = 0.05; // thin box
-        // color coding: selected cluster green, others blue
-        if (static_cast<int>(i) == best_cluster_idx) {
-          box.color.r = 0.0f; box.color.g = 1.0f; box.color.b = 0.0f; box.color.a = 0.6f;
-        } else {
-          box.color.r = 0.0f; box.color.g = 0.0f; box.color.b = 1.0f; box.color.a = 0.3f;
-        }
-        marker_array.markers.push_back(box);
-      }
-      cluster_marker_pub_->publish(marker_array);
+    if (all_clusters_cloud->points.size() > 0) {
+      sensor_msgs::msg::PointCloud2 clusters_msg;
+      pcl::toROSMsg(*all_clusters_cloud, clusters_msg);
+      clusters_msg.header = header;
+      cloud_pub_clusters_->publish(clusters_msg);
     }
 
     // Publish the selected best cluster
@@ -730,7 +688,6 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_selected_cluster_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr line_marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr center_pub_;
-  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr cluster_marker_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // buffer of recent ROI clouds
