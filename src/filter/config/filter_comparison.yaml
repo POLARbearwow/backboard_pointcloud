@@ -20,7 +20,7 @@ pointcloud_filter_node:
     filter_type: 'passthrough'
     
     # Advanced filter selection (选择用于2D投影的滤波器)
-    advanced_filter_type: 'statistical'  # none, statistical, bilateral, gaussian
+    advanced_filter_type: 'none'  # none, statistical, bilateral, gaussian
     
     # Mode selection: comparison mode启用所有滤波器
     comparison_mode: true

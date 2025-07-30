@@ -25,6 +25,7 @@
 
 
 #include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <Eigen/Dense>
 #include <sstream>
@@ -100,9 +101,21 @@ public:
     line_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
       "board_line_marker", 10);
 
+    // Publisher for cluster bounding boxes visualization  
+    bounding_box_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(
+      "board_line_marker_array", 10);
+
     // Publisher for computed center point
     center_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
       "board_bottom_center", 10);
+
+    // Publisher for basket center point (31cm forward from board center)
+    basket_center_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(
+      "basket_center", 10);
+
+    // Publisher for basket center marker visualization
+    basket_center_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
+      "basket_center_marker", 10);
 
     // Timer to periodically refresh parameters at runtime
     timer_ = this->create_wall_timer(std::chrono::seconds(1), std::bind(&PointCloudFilterNode::get_filter_params, this));
@@ -127,6 +140,7 @@ public:
     min_cluster_dimension_ = get_parameter("min_cluster_dimension").as_double();
   }
 
+  //why?
 private:
   void get_filter_params()
   {
@@ -231,8 +245,10 @@ private:
       return base_cloud;
     }
 
+    // ???
     pcl::PointCloud<pcl::PointXYZI>::Ptr result_cloud(new pcl::PointCloud<pcl::PointXYZI>(*base_cloud));
 
+    //input output ???
     if (advanced_filter_type_ == "statistical") {
       // Statistical Outlier Removal Filter
       pcl::StatisticalOutlierRemoval<pcl::PointXYZI> sor;
@@ -297,6 +313,7 @@ private:
     return result_cloud;
   }
 
+  //header ???
   pcl::PointCloud<pcl::PointXYZI>::Ptr performClustering(pcl::PointCloud<pcl::PointXYZI>::Ptr input_cloud, const std_msgs::msg::Header& header)
   {
     if (input_cloud->points.size() < min_cluster_size_) {
@@ -317,7 +334,7 @@ private:
     ec.setInputCloud(input_cloud);
     ec.extract(cluster_indices);
 
-    RCLCPP_INFO(this->get_logger(), "Found %zu clusters", cluster_indices.size());
+    // RCLCPP_INFO(this->get_logger(), "Found %zu clusters", cluster_indices.size());
 
     if (cluster_indices.empty()) {
       return nullptr;
@@ -326,11 +343,15 @@ private:
     // Create a combined cloud of all valid clusters for visualization
     pcl::PointCloud<pcl::PointXYZI>::Ptr all_clusters_cloud(new pcl::PointCloud<pcl::PointXYZI>);
     
+    // Create marker array for cluster bounding boxes
+    visualization_msgs::msg::MarkerArray marker_array;
+    
     // Find the best cluster (smallest one with valid dimensions, likely to be the backboard)
     pcl::PointCloud<pcl::PointXYZI>::Ptr best_cluster(new pcl::PointCloud<pcl::PointXYZI>);
     size_t best_cluster_size = max_cluster_size_ + 1; // Initialize with a size larger than max
     int best_cluster_idx = -1;
     int valid_clusters_count = 0;
+    float best_cluster_width = 0.0f, best_cluster_height = 0.0f;
 
     for (size_t i = 0; i < std::min(cluster_indices.size(), static_cast<size_t>(max_clusters_)); ++i) {
       pcl::PointCloud<pcl::PointXYZI>::Ptr cluster_cloud(new pcl::PointCloud<pcl::PointXYZI>);
@@ -360,18 +381,51 @@ private:
       float cluster_max_dimension = std::max(cluster_width, cluster_height);
       float cluster_min_dimension = std::min(cluster_width, cluster_height);
       
-      RCLCPP_INFO(this->get_logger(), "Cluster %zu: %zu points, dimensions: %.2f x %.2f m (max: %.2f m)", 
-                  i, cluster_cloud->points.size(), cluster_width, cluster_height, cluster_max_dimension);
+      // RCLCPP_INFO(this->get_logger(), "Cluster %zu: %zu points, dimensions: %.2f x %.2f m (max: %.2f m)", 
+      //             i, cluster_cloud->points.size(), cluster_width, cluster_height, cluster_max_dimension);
+
+      // Create bounding box marker for each cluster (both valid and invalid for debugging)
+      visualization_msgs::msg::Marker bbox_marker;
+      bbox_marker.header = header;
+      bbox_marker.ns = "cluster_bboxes";
+      bbox_marker.id = static_cast<int>(i);
+      bbox_marker.type = visualization_msgs::msg::Marker::CUBE;
+      bbox_marker.action = visualization_msgs::msg::Marker::ADD;
+      
+      // Set position (center of bounding box)
+      bbox_marker.pose.position.x = (min_x + max_x) / 2.0;
+      bbox_marker.pose.position.y = (min_y + max_y) / 2.0;
+      bbox_marker.pose.position.z = 0.0;
+      bbox_marker.pose.orientation.w = 1.0;
+      
+      // Set scale (dimensions of bounding box)
+      bbox_marker.scale.x = cluster_width;
+      bbox_marker.scale.y = cluster_height;
+      bbox_marker.scale.z = 0.1; // Small height for 2D visualization
+      
+      // Set transparency
+      bbox_marker.color.a = 0.3;
 
       // Check if cluster dimensions are within valid range
       if (cluster_max_dimension > max_cluster_dimension_ || cluster_max_dimension < min_cluster_dimension_) {
-        RCLCPP_INFO(this->get_logger(), "Cluster %zu rejected: dimension %.2f m outside range [%.2f, %.2f] m", 
-                    i, cluster_max_dimension, min_cluster_dimension_, max_cluster_dimension_);
+        // RCLCPP_INFO(this->get_logger(), "Cluster %zu rejected: dimension %.2f m outside range [%.2f, %.2f] m", 
+        //             i, cluster_max_dimension, min_cluster_dimension_, max_cluster_dimension_);
+        // Color rejected clusters red
+        bbox_marker.color.r = 1.0;
+        bbox_marker.color.g = 0.0;
+        bbox_marker.color.b = 0.0;
+        marker_array.markers.push_back(bbox_marker);
         continue;
       }
       
+      // Color valid clusters green
+      bbox_marker.color.r = 0.0;
+      bbox_marker.color.g = 1.0;
+      bbox_marker.color.b = 0.0;
+      marker_array.markers.push_back(bbox_marker);
+      
       valid_clusters_count++;
-      RCLCPP_INFO(this->get_logger(), "Cluster %zu accepted: valid dimensions", i);
+      // RCLCPP_INFO(this->get_logger(), "Cluster %zu accepted: valid dimensions", i);
 
       // Add to combined visualization cloud
       *all_clusters_cloud += *cluster_cloud;
@@ -381,11 +435,13 @@ private:
         best_cluster_size = cluster_cloud->points.size();
         best_cluster = cluster_cloud;
         best_cluster_idx = i;
+        best_cluster_width = cluster_width;
+        best_cluster_height = cluster_height;
       }
     }
 
-    RCLCPP_INFO(this->get_logger(), "Found %d valid clusters out of %zu total clusters", 
-                valid_clusters_count, cluster_indices.size());
+    // RCLCPP_INFO(this->get_logger(), "Found %d valid clusters out of %zu total clusters", 
+    //             valid_clusters_count, cluster_indices.size());
 
     // Publish all clusters for visualization
     if (all_clusters_cloud->points.size() > 0) {
@@ -395,6 +451,12 @@ private:
       cloud_pub_clusters_->publish(clusters_msg);
     }
 
+    // Publish cluster bounding boxes
+    if (!marker_array.markers.empty()) {
+      bounding_box_pub_->publish(marker_array);
+      // RCLCPP_INFO(this->get_logger(), "Published %zu cluster bounding boxes", marker_array.markers.size());
+    }
+
     // Publish the selected best cluster
     if (best_cluster && best_cluster->points.size() > 0 && best_cluster_idx >= 0) {
       sensor_msgs::msg::PointCloud2 selected_msg;
@@ -402,8 +464,9 @@ private:
       selected_msg.header = header;
       cloud_pub_selected_cluster_->publish(selected_msg);
       
-      RCLCPP_INFO(this->get_logger(), "Selected cluster %d with %zu points for backboard detection (passed dimension check)", 
-                  best_cluster_idx, best_cluster->points.size());
+      RCLCPP_INFO(this->get_logger(), "Selected cluster %d: %zu points, dimensions: %.2f x %.2f m", 
+                  best_cluster_idx, best_cluster->points.size(), 
+                  best_cluster_width, best_cluster_height);
       return best_cluster;
     }
 
@@ -486,13 +549,15 @@ private:
 
     cloud_pub_2d_->publish(output_msg_2d);
 
+    // RCLCPP_INFO(this->get_logger(), "2D ROI point cloud contains %zu points after filtering and flattening", roi_cloud->points.size());
+
     // ================= Clustering for backboard detection =================
     pcl::PointCloud<pcl::PointXYZI>::Ptr selected_cluster_cloud = performClustering(roi_cloud, msg->header);
     
     // Use the selected cluster for line detection instead of all ROI points
     if (selected_cluster_cloud && selected_cluster_cloud->points.size() > 0) {
       roi_cloud = selected_cluster_cloud;  // Replace roi_cloud with selected cluster
-      RCLCPP_INFO(this->get_logger(), "Using selected cluster with %zu points for line detection", roi_cloud->points.size());
+      // RCLCPP_INFO(this->get_logger(), "Using selected cluster with %zu points for line detection", roi_cloud->points.size());
     } else {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
                            "No suitable cluster found, using all ROI points (%zu)", roi_cloud->points.size());
@@ -573,15 +638,16 @@ private:
       float len_c = tmax_c - tmin_c;
       double inlier_ratio_c = static_cast<double>(inliers.size()) / remaining->points.size();
 
-      // Log candidate statistics
-      RCLCPP_INFO(this->get_logger(), "Candidate %d: len=%.3f m, inlier_ratio=%.2f, inliers=%zu/%zu", c, len_c, inlier_ratio_c, inliers.size(), remaining->points.size());
+      // Log candidate statistics (commented for cleaner output)
+      // RCLCPP_INFO(this->get_logger(), "Candidate %d: len=%.3f m, inlier_ratio=%.2f, inliers=%zu/%zu", 
+      //             c, len_c, inlier_ratio_c, inliers.size(), remaining->points.size());
 
       // evaluate candidate
       if (std::fabs(len_c - board_width_) <= len_tol_ && inlier_ratio_c >= min_inlier_ratio_) {
         best_candidate = {P0_c, dir_c, tmin_c, tmax_c, inliers.size()};
         found = true;
-        RCLCPP_INFO(this->get_logger(), "--> Candidate %d fully validated (len=%.3f m, inlier_ratio=%.3f)", 
-                    c, len_c, inlier_ratio_c);
+        // RCLCPP_INFO(this->get_logger(), "--> Candidate %d fully validated (len=%.3f m, inlier_ratio=%.3f)", 
+        //             c, len_c, inlier_ratio_c);
         break; // accept first good candidate
       }
 
@@ -598,8 +664,8 @@ private:
     }
 
     if (!found) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 3000,
-                           "No line candidate passed validation after testing %d candidate(s)", candidate_idx+1);
+      // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 3000,
+      //                      "No line candidate passed validation after testing %d candidate(s)", candidate_idx+1);
       return;
     }
 
@@ -613,20 +679,20 @@ private:
     double inlier_ratio = static_cast<double>(best_candidate.inlier_cnt) / merged_cloud->points.size();
     
     if (std::fabs(current_len - board_width_) > len_tol_) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 3000,
-                           "Reject line: length %.2f m not within tolerance of board width %.2f m",
-                           current_len, board_width_);
+      // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 3000,
+      //                      "Reject line: length %.2f m not within tolerance of board width %.2f m",
+      //                      current_len, board_width_);
       return;
     }
 
     if (inlier_ratio < min_inlier_ratio_) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 3000,
-                           "Reject line: inlier ratio %.2f below threshold %.2f",
-                           inlier_ratio, min_inlier_ratio_);
+      // RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 3000,
+      //                      "Reject line: inlier ratio %.2f below threshold %.2f",
+      //                      inlier_ratio, min_inlier_ratio_);
       return;
     }
     
-    RCLCPP_INFO(this->get_logger(), "Line validated: length=%.3f m, inlier_ratio=%.3f", current_len, inlier_ratio);
+    // RCLCPP_INFO(this->get_logger(), "Line validated: length=%.3f m, inlier_ratio=%.3f", current_len, inlier_ratio);
 
     // Optional: extend endpoints to full board width if slightly shorter
     float extend = (board_width_ - current_len) / 2.0f;
@@ -636,6 +702,10 @@ private:
     Eigen::Vector3f P_min = P0 + dir * t_min;
     Eigen::Vector3f P_max = P0 + dir * t_max;
     Eigen::Vector3f center = 0.5f * (P_min + P_max);
+
+    // Log detected line segment information
+    RCLCPP_INFO(this->get_logger(), "Detected line segment: length=%.3f m, center=(%.3f, %.3f), endpoints=(%.3f,%.3f) to (%.3f,%.3f)", 
+                current_len, center.x(), center.y(), P_min.x(), P_min.y(), P_max.x(), P_max.y());
 
     // Publish marker for visualization
     static int marker_seq = 0;
@@ -654,10 +724,6 @@ private:
     line_marker.color.r = 1.0f; line_marker.color.g = 0.0f; line_marker.color.b = 0.0f; line_marker.color.a = 1.0f;
     line_marker.lifetime = rclcpp::Duration::from_seconds(0); // persistent
     
-    // 检查marker话题的订阅者数量
-    size_t subscriber_count = line_marker_pub_->get_subscription_count();
-    RCLCPP_INFO(this->get_logger(), "Marker topic has %zu subscriber(s)", subscriber_count);
-    
     line_marker_pub_->publish(line_marker);
     // RCLCPP_INFO(this->get_logger(), "Publishing marker: frame_id=%s, points=[(%.2f,%.2f), (%.2f,%.2f)]", 
     //             line_marker.header.frame_id.c_str(),
@@ -674,7 +740,73 @@ private:
     center_msg.point.z = 0.0;
     center_pub_->publish(center_msg);
 
-    RCLCPP_INFO(this->get_logger(), "Board bottom center: (%.3f, %.3f)", center.x(), center.y());
+    // Calculate basket center (31cm forward from board center, perpendicular to board)
+    // For 2D case, the board line direction is dir, so normal direction is (-dir.y, dir.x)
+    Eigen::Vector2f board_2d_dir(dir.x(), dir.y());  // 2D direction vector of the board line
+    board_2d_dir.normalize();
+    
+    // Normal vector pointing "forward" from the board (perpendicular to board line)
+    Eigen::Vector2f normal(-board_2d_dir.y(), board_2d_dir.x());
+    
+    // Calculate potential basket centers in both directions
+    float basket_offset = 0.31f;  // 31cm in meters
+    Eigen::Vector2f board_center_2d(center.x(), center.y());
+    Eigen::Vector2f basket_center_option1 = board_center_2d + basket_offset * normal;
+    Eigen::Vector2f basket_center_option2 = board_center_2d - basket_offset * normal;
+    
+    // Calculate distances from origin (sensor position assumed at origin)
+    float dist_board = sqrt(board_center_2d.x() * board_center_2d.x() + board_center_2d.y() * board_center_2d.y());
+    float dist_option1 = sqrt(basket_center_option1.x() * basket_center_option1.x() + basket_center_option1.y() * basket_center_option1.y());
+    float dist_option2 = sqrt(basket_center_option2.x() * basket_center_option2.x() + basket_center_option2.y() * basket_center_option2.y());
+    
+    // Choose the basket center that is closer to sensor (smaller distance)
+    Eigen::Vector2f basket_center_2d;
+    if (dist_option1 < dist_option2) {
+      basket_center_2d = basket_center_option1;
+      RCLCPP_INFO(this->get_logger(), "Direction check: Option1 closer (%.3f m vs %.3f m), using normal direction", 
+                  dist_option1, dist_option2);
+    } else {
+      basket_center_2d = basket_center_option2;
+      RCLCPP_INFO(this->get_logger(), "Direction check: Option2 closer (%.3f m vs %.3f m), using reversed normal direction", 
+                  dist_option2, dist_option1);
+    }
+    
+    // Publish basket center point
+    geometry_msgs::msg::PointStamped basket_center_msg;
+    basket_center_msg.header = msg->header;
+    basket_center_msg.point.x = basket_center_2d.x();
+    basket_center_msg.point.y = basket_center_2d.y();
+    basket_center_msg.point.z = 0.0;
+    basket_center_pub_->publish(basket_center_msg);
+
+    // Publish basket center marker for visualization
+    visualization_msgs::msg::Marker basket_marker;
+    basket_marker.header.frame_id = "base_link";
+    basket_marker.header.stamp = this->now();
+    basket_marker.id = 1000; // Unique ID for basket marker
+    basket_marker.type = visualization_msgs::msg::Marker::SPHERE;
+    basket_marker.action = visualization_msgs::msg::Marker::ADD;
+    basket_marker.pose.position.x = basket_center_2d.x();
+    basket_marker.pose.position.y = basket_center_2d.y();
+    basket_marker.pose.position.z = 0.0;
+    basket_marker.pose.orientation.w = 1.0;
+    basket_marker.scale.x = 0.2; // 20cm diameter sphere
+    basket_marker.scale.y = 0.2;
+    basket_marker.scale.z = 0.2;
+    basket_marker.color.r = 1.0; // Red color for basket
+    basket_marker.color.g = 0.0;
+    basket_marker.color.b = 0.0;
+    basket_marker.color.a = 1.0;
+    basket_marker.lifetime = rclcpp::Duration::from_seconds(1.0);
+    
+    basket_center_marker_pub_->publish(basket_marker);
+
+    RCLCPP_INFO(this->get_logger(), "Board center: (%.3f, %.3f) at %.3f m distance", 
+                center.x(), center.y(), dist_board);
+    RCLCPP_INFO(this->get_logger(), "Basket center: (%.3f, %.3f) at %.3f m distance, offset: (%.3f, %.3f)", 
+                basket_center_2d.x(), basket_center_2d.y(), 
+                sqrt(basket_center_2d.x() * basket_center_2d.x() + basket_center_2d.y() * basket_center_2d.y()),
+                basket_center_2d.x() - center.x(), basket_center_2d.y() - center.y());
   }
 
   // Members
@@ -687,7 +819,10 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_clusters_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_selected_cluster_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr line_marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr bounding_box_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr center_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr basket_center_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr basket_center_marker_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // buffer of recent ROI clouds

@@ -2,19 +2,26 @@ pointcloud_filter_node:
   ros__parameters:
     # Bounding box filter parameters
     x_min: 0.0
-    x_max: 12.0
-    y_min: -20.0
-    y_max: 20.0
-    z_min: 2.5
-    z_max: 4.0 
+    x_max: 7.0
+    y_min: -5.0
+    y_max: 5.0
+    z_min: 1.6
+    z_max: 4.5 
     
     # Board detection parameters
     board_width: 1.8 
     len_tol: 0.2
     min_inlier_ratio: 0.01
     max_candidates: 10 
-    history_size: 3
+    history_size: 20
     ransac_dist_thresh: 0.02 
+
+
+    # Hoop circle detection parameters
+    circle_radius: 0.225          # Expected radius (m) for 45 cm hoop
+    circle_radius_tol: 0.05       # Allowed ± tolerance (m)
+    circle_ransac_thresh: 0.1    # RANSAC distance threshold (m)
+    circle_min_inliers: 5        # Minimum inliers to accept a circle 
     
     # Filter type selection (legacy parameter, use enable_* instead)
     filter_type: 'passthrough'
@@ -38,9 +45,10 @@ pointcloud_filter_node:
     gaussian_radius: 0.03       # Search radius for MLS smoothing
     
     # Clustering parameters for backboard detection
-    cluster_tolerance: 2.0     # Maximum distance between points in the same cluster (meters)
+    cluster_tolerance: 1.0     # Maximum distance between points in the same cluster (meters)
     min_cluster_size: 20        # Minimum number of points in a valid cluster
     max_cluster_size: 2000       # Maximum number of points in a valid cluster (to filter out large walls)
     max_clusters: 10            # Maximum number of clusters to extract
     max_cluster_dimension: 3.0  # Maximum dimension (length/width) of a valid cluster (meters)
     min_cluster_dimension: 1.0  # Minimum dimension (length/width) of a valid cluster (meters) 
+
