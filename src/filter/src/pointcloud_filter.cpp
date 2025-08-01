@@ -27,6 +27,7 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <Eigen/Dense>
 #include <sstream>
 #include <iomanip>
@@ -116,6 +117,10 @@ public:
     // Publisher for basket center marker visualization
     basket_center_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(
       "basket_center_marker", 10);
+
+    // Publisher for initial pose (basket center as robot initial position)
+    initialpose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+      "initialpose", 10);
 
     // Timer to periodically refresh parameters at runtime
     timer_ = this->create_wall_timer(std::chrono::seconds(1), std::bind(&PointCloudFilterNode::get_filter_params, this));
@@ -464,9 +469,9 @@ private:
       selected_msg.header = header;
       cloud_pub_selected_cluster_->publish(selected_msg);
       
-      RCLCPP_INFO(this->get_logger(), "Selected cluster %d: %zu points, dimensions: %.2f x %.2f m", 
-                  best_cluster_idx, best_cluster->points.size(), 
-                  best_cluster_width, best_cluster_height);
+      // RCLCPP_INFO(this->get_logger(), "Selected cluster %d: %zu points, dimensions: %.2f x %.2f m", 
+      //             best_cluster_idx, best_cluster->points.size(), 
+      //             best_cluster_width, best_cluster_height);
       return best_cluster;
     }
 
@@ -801,6 +806,32 @@ private:
     
     basket_center_marker_pub_->publish(basket_marker);
 
+    // Publish basket center as initial pose for robot localization
+    geometry_msgs::msg::PoseWithCovarianceStamped initialpose_msg;
+    initialpose_msg.header = msg->header;
+    initialpose_msg.pose.pose.position.x = basket_center_2d.x();
+    initialpose_msg.pose.pose.position.y = basket_center_2d.y();
+    initialpose_msg.pose.pose.position.z = 0.0;
+    // Set orientation (quaternion) - identity quaternion (no rotation)
+    initialpose_msg.pose.pose.orientation.x = 0.0;
+    initialpose_msg.pose.pose.orientation.y = 0.0;
+    initialpose_msg.pose.pose.orientation.z = 0.0;
+    initialpose_msg.pose.pose.orientation.w = 1.0;
+    // // Set covariance matrix (diagonal values for position and orientation uncertainty)
+    // for (int i = 0; i < 36; i++) {
+    //   initialpose_msg.pose.covariance[i] = 0.0;
+    // }
+    // // Position covariance (x, y, z)
+    // initialpose_msg.pose.covariance[0] = 0.1;   // x variance
+    // initialpose_msg.pose.covariance[7] = 0.1;   // y variance
+    // initialpose_msg.pose.covariance[14] = 0.1;  // z variance
+    // // Orientation covariance (roll, pitch, yaw)
+    // initialpose_msg.pose.covariance[21] = 0.1;  // roll variance
+    // initialpose_msg.pose.covariance[28] = 0.1;  // pitch variance
+    // initialpose_msg.pose.covariance[35] = 0.1;  // yaw variance
+    
+    initialpose_pub_->publish(initialpose_msg);
+
     RCLCPP_INFO(this->get_logger(), "Board center: (%.3f, %.3f) at %.3f m distance", 
                 center.x(), center.y(), dist_board);
     RCLCPP_INFO(this->get_logger(), "Basket center: (%.3f, %.3f) at %.3f m distance, offset: (%.3f, %.3f)", 
@@ -823,6 +854,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr center_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr basket_center_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr basket_center_marker_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initialpose_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // buffer of recent ROI clouds
